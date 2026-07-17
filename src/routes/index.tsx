@@ -65,12 +65,7 @@ function MonitorPage() {
   const [tab, setTab] = useState<Tab>("arb");
   const [paused, setPaused] = useState(false);
   const [feed, setFeed] = useState<SharpMove[]>([]);
-  const [showIntro, setShowIntro] = useState(false);
-  useEffect(() => {
-    if (!localStorage.getItem("monitoor_intro")) {
-      setShowIntro(true);
-    }
-  }, []);
+  const [showIntro, setShowIntro] = useState(true);
 
   const { data } = useSuspenseQuery({
     ...monitorQuery,
@@ -97,7 +92,7 @@ function MonitorPage() {
 
   return (
     <div className="min-h-screen bg-[#07090c] text-[#d7e0ea] font-mono">
-      {showIntro && <IntroModal onClose={() => { setShowIntro(false); localStorage.setItem("monitoor_intro", "1"); }} />}
+      {showIntro && <IntroModal onClose={() => setShowIntro(false)} />}
       <TopBar
         critical={critical}
         warn={warn}
@@ -132,7 +127,7 @@ function MonitorPage() {
         </aside>
       </main>
 
-      <footer className="mx-auto max-w-[1400px] px-4 pb-8 pt-2 text-[10px] text-[#4a5766] flex flex-wrap gap-4">
+      <footer className="mx-auto max-w-[1400px] px-4 pb-8 pt-2 text-[10px] text-[#4a5766] flex flex-wrap items-center gap-4">
         <span>THE MONITOOR v0.2</span>
         <span>·</span>
         <span>polymarket gamma-api · kalshi trade-api v2</span>
@@ -144,6 +139,9 @@ function MonitorPage() {
         <Link to="/" className="underline hover:text-[#8ea3b8]">
           reload
         </Link>
+        <a href="solana:CRdAJC5JriJ64oHwqC5EJFEWr4DrcfsFeK4YDk17tLRD?amount=0.066&label=Coffee+for+Misha" className="ml-auto flex items-center gap-2 hover:text-[#f0b429] transition-colors border border-[#1f2932] px-3 py-1 rounded">
+           ☕ Buy me a Coffee
+        </a>
         <span>·</span>
         <a href="https://x.com/mishastastna" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-[#8ea3b8] transition-colors">
           <img src="/misha-pfp.jpg" alt="Misha Stastna" className="w-4 h-4 rounded-full" />
@@ -755,12 +753,17 @@ function IntroModal({ onClose }: { onClose: () => void }) {
               <span className="text-[13px] font-semibold">Misha Stastna</span>
             </div>
           </a>
-          <button
-            onClick={handleClose}
-            className="bg-[#3ee08a] text-[#07090c] px-6 py-2 text-[12px] font-bold tracking-widest hover:bg-[#3ee08a]/80 transition-colors"
-          >
-            ENTER SYSTEM
-          </button>
+          <div className="flex items-center gap-4">
+            <a href="solana:CRdAJC5JriJ64oHwqC5EJFEWr4DrcfsFeK4YDk17tLRD?amount=0.066&label=Coffee+for+Misha" className="border border-[#1f2932] text-[#d7e0ea] hover:border-[#f0b429] hover:text-[#f0b429] px-4 py-2 text-[12px] font-bold tracking-widest transition-colors flex items-center gap-2">
+              ☕ BUY ME A COFFEE
+            </a>
+            <button
+              onClick={handleClose}
+              className="bg-[#3ee08a] text-[#07090c] px-6 py-2 text-[12px] font-bold tracking-widest hover:bg-[#3ee08a]/80 transition-colors"
+            >
+              ENTER SYSTEM
+            </button>
+          </div>
         </div>
       </div>
     </div>
