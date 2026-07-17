@@ -1,17 +1,15 @@
 import React, { useState, useCallback } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 
 export function CoffeeButton({ className }: { className?: string }) {
   const { connection } = useConnection();
   const { publicKey, sendTransaction, connected } = useWallet();
-  const { setVisible } = useWalletModal();
   const [loading, setLoading] = useState(false);
 
   const handleTip = useCallback(async () => {
     if (!connected || !publicKey) {
-      setVisible(true);
       return;
     }
 
@@ -47,15 +45,35 @@ export function CoffeeButton({ className }: { className?: string }) {
     } finally {
       setLoading(false);
     }
-  }, [connected, publicKey, connection, sendTransaction, setVisible]);
+  }, [connected, publicKey, connection, sendTransaction]);
 
   return (
-    <button
-      onClick={handleTip}
-      disabled={loading}
-      className={className || "border border-[#1f2932] text-[#d7e0ea] hover:border-[#f0b429] hover:text-[#f0b429] px-4 py-2 text-[12px] font-bold tracking-widest transition-colors flex items-center gap-2"}
-    >
-      {loading ? "SENDING..." : (connected ? "☕ SEND $10 SOL" : "☕ BUY ME A COFFEE")}
-    </button>
+    <div className="flex items-center gap-2">
+      <WalletMultiButton 
+        style={{
+          backgroundColor: 'transparent',
+          border: '1px solid #1f2932',
+          color: '#d7e0ea',
+          padding: '0.5rem 1rem',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          letterSpacing: '0.1em',
+          height: 'auto',
+          lineHeight: 'inherit',
+          borderRadius: '0.25rem',
+          transition: 'all 0.2s',
+          fontFamily: 'inherit'
+        }}
+      />
+      {connected && (
+        <button
+          onClick={handleTip}
+          disabled={loading}
+          className={className || "border border-[#3ee08a] text-[#3ee08a] hover:bg-[#3ee08a] hover:text-[#0b0f14] px-4 py-2 text-[12px] font-bold tracking-widest transition-colors flex items-center gap-2"}
+        >
+          {loading ? "SENDING..." : "☕ SEND $10 TIP"}
+        </button>
+      )}
+    </div>
   );
 }
