@@ -1,17 +1,28 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  seedMarkets,
-  tick,
   analyze,
-  detectSharpMoves,
+  diffSharpMoves,
+  snapshotMap,
   formatPct,
   formatMoney,
   toOdds,
   edgeAfterFees,
   type MarketRow,
   type Book,
+  type SharpMove,
 } from "@/lib/monitor-data";
+import {
+  getMonitorSnapshot,
+  type MonitorSnapshot,
+} from "@/lib/monitor-sources.functions";
+
+const monitorQuery = queryOptions<MonitorSnapshot>({
+  queryKey: ["monitor-snapshot"],
+  queryFn: () => getMonitorSnapshot(),
+  staleTime: 0,
+});
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -20,7 +31,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Real-time surveillance console comparing TX Odds against every major prediction market. Flags sharp movements, arbitrage windows and mispriced markets.",
+          "Real-time surveillance console comparing TX Odds against Polymarket and Kalshi. Flags sharp movements, arbitrage windows and mispriced markets.",
       },
       { property: "og:title", content: "The Monitor — TX Odds Surveillance" },
       {
@@ -30,41 +41,46 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
+  loader: ({ context }) => context.queryClient.ensureQueryData(monitorQuery),
   component: MonitorPage,
+  errorComponent: ({ error }) => (
+    <div className="min-h-screen bg-[#07090c] text-[#d7e0ea] font-mono p-6">
+      <div className="text-[#ff5a6b] text-[11px] tracking-widest">FEED ERROR</div>
+      <pre className="text-[11px] mt-2 whitespace-pre-wrap">{error.message}</pre>
+    </div>
+  ),
+  notFoundComponent: () => (
+    <div className="min-h-screen bg-[#07090c] text-[#d7e0ea] font-mono p-6 text-[11px]">
+      market not found
+    </div>
+  ),
 });
 
 type Tab = "arb" | "admin";
 
 function MonitorPage() {
   const [tab, setTab] = useState<Tab>("arb");
-  const [rows, setRows] = useState<MarketRow[]>(seedMarkets);
   const [paused, setPaused] = useState(false);
-  const [feed, setFeed] = useState<string[]>([]);
+  const [feed, setFeed] = useState<SharpMove[]>([]);
 
+  const { data } = useSuspenseQuery({
+    ...monitorQuery,
+    refetchInterval: paused ? false : 5000,
+    refetchIntervalInBackground: true,
+  });
+  const rows = data.rows;
+
+  // Sharp-move detection: diff each new snapshot against the previous one.
+  const prevSnapRef = useRef<Map<string, Map<Book, number>> | null>(null);
   useEffect(() => {
-    if (paused) return;
-    const id = setInterval(() => {
-      setRows((r) => {
-        const next = tick(r);
-        const moves = detectSharpMoves(next);
-        if (moves.length) {
-          setFeed((f) =>
-            [
-              ...moves.map(
-                (m) =>
-                  `${new Date().toLocaleTimeString()}  ${m.book.toUpperCase().padEnd(11)}  ${
-                    m.deltaPP > 0 ? "▲" : "▼"
-                  } ${Math.abs(m.deltaPP).toFixed(2)}pp  ${m.row.event} / ${m.row.outcome}`,
-              ),
-              ...f,
-            ].slice(0, 60),
-          );
-        }
-        return next;
-      });
-    }, 1600);
-    return () => clearInterval(id);
-  }, [paused]);
+    if (prevSnapRef.current) {
+      const moves = diffSharpMoves(prevSnapRef.current, rows);
+      if (moves.length) {
+        setFeed((f) => [...moves, ...f].slice(0, 80));
+      }
+    }
+    prevSnapRef.current = snapshotMap(rows);
+  }, [rows]);
 
   const discrepancies = useMemo(() => analyze(rows), [rows]);
   const critical = discrepancies.filter((d) => d.severity === "critical").length;
@@ -77,6 +93,8 @@ function MonitorPage() {
         warn={warn}
         paused={paused}
         setPaused={setPaused}
+        rowCount={rows.length}
+        errors={data.errors}
       />
 
       <div className="border-b border-[#1a2129] bg-[#0b0f14]">
@@ -92,11 +110,7 @@ function MonitorPage() {
 
       <main className="mx-auto max-w-[1400px] px-4 py-4 grid grid-cols-12 gap-4">
         <section className="col-span-12 lg:col-span-8">
-          {tab === "arb" ? (
-            <ArbView rows={rows} />
-          ) : (
-            <AdminView rows={rows} />
-          )}
+          {tab === "arb" ? <ArbView rows={rows} /> : <AdminView rows={rows} />}
         </section>
 
         <aside className="col-span-12 lg:col-span-4 space-y-4">
@@ -106,11 +120,17 @@ function MonitorPage() {
       </main>
 
       <footer className="mx-auto max-w-[1400px] px-4 pb-8 pt-2 text-[10px] text-[#4a5766] flex flex-wrap gap-4">
-        <span>THE MONITOR v0.1</span>
+        <span>THE MONITOR v0.2</span>
         <span>·</span>
-        <span>TX feed: txline.txodds.com/documentation/worldcup</span>
+        <span>polymarket gamma-api · kalshi trade-api v2</span>
         <span>·</span>
-        <Link to="/" className="underline hover:text-[#8ea3b8]">reload</Link>
+        <span className="text-[#f0b429]">
+          TX feed simulated (drift from consensus) — awaiting txodds.com credentials
+        </span>
+        <span>·</span>
+        <Link to="/" className="underline hover:text-[#8ea3b8]">
+          reload
+        </Link>
       </footer>
     </div>
   );
@@ -121,15 +141,19 @@ function TopBar({
   warn,
   paused,
   setPaused,
+  rowCount,
+  errors,
 }: {
   critical: number;
   warn: number;
   paused: boolean;
   setPaused: (v: boolean) => void;
+  rowCount: number;
+  errors: { source: string; message: string }[];
 }) {
   return (
     <header className="border-b border-[#1a2129] bg-[#0b0f14]">
-      <div className="mx-auto max-w-[1400px] px-4 py-3 flex items-center gap-4">
+      <div className="mx-auto max-w-[1400px] px-4 py-3 flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-[#3ee08a] animate-pulse" />
           <h1 className="text-[13px] tracking-[0.28em] font-semibold text-[#e6edf5]">
@@ -137,10 +161,18 @@ function TopBar({
           </h1>
           <span className="text-[10px] text-[#4a5766]">// TX ODDS SURVEILLANCE</span>
         </div>
-        <div className="ml-auto flex items-center gap-3 text-[11px]">
+        <div className="ml-auto flex items-center gap-3 text-[11px] flex-wrap">
+          <Stat label="MKTS" value={rowCount} tone="muted" />
           <Stat label="CRIT" value={critical} tone={critical ? "crit" : "muted"} />
           <Stat label="WARN" value={warn} tone={warn ? "warn" : "muted"} />
-          <Stat label="FEED" value={paused ? "PAUSED" : "LIVE"} tone={paused ? "muted" : "ok"} />
+          <Stat
+            label="FEED"
+            value={paused ? "PAUSED" : "LIVE"}
+            tone={paused ? "muted" : "ok"}
+          />
+          {errors.map((e) => (
+            <Stat key={e.source} label={e.source.toUpperCase()} value="DOWN" tone="crit" />
+          ))}
           <button
             onClick={() => setPaused(!paused)}
             className="border border-[#1f2932] hover:border-[#3ee08a] px-2 py-1 text-[10px] tracking-widest"
@@ -210,7 +242,7 @@ function ArbView({ rows }: { rows: MarketRow[] }) {
   return (
     <Panel
       title="ARBITRAGE OPPORTUNITIES"
-      subtitle="TX price vs weighted consensus across other books. Buy side = market that hasn't adjusted."
+      subtitle="TX price vs weighted consensus of Polymarket + Kalshi. Buy side = market that hasn't adjusted."
       right={<span className="text-[#3ee08a] text-[11px]">{opps.length} live</span>}
     >
       <div className="divide-y divide-[#141a21]">
@@ -235,9 +267,13 @@ function ArbView({ rows }: { rows: MarketRow[] }) {
               className="grid grid-cols-[2.4fr_0.7fr_0.9fr_0.7fr_0.7fr_0.9fr_0.9fr] gap-2 px-3 py-2.5 text-[12px] hover:bg-[#0d1218]"
             >
               <div>
-                <div className="text-[#e6edf5]">{d.row.event}</div>
+                <div className="text-[#e6edf5] line-clamp-1">{d.row.event}</div>
                 <div className="text-[10px] text-[#4a5766]">
-                  {d.row.outcome} · {d.row.category}
+                  {d.row.outcome} · {d.row.category} ·{" "}
+                  {d.row.quotes
+                    .filter((q) => q.book !== "TXOdds")
+                    .map((q) => q.book)
+                    .join("+")}
                 </div>
               </div>
               <div className="tabular-nums">{formatPct(d.tx.prob, 2)}</div>
@@ -267,7 +303,7 @@ function ArbView({ rows }: { rows: MarketRow[] }) {
 
       <div className="border-t border-[#141a21] px-3 py-2 text-[10px] text-[#4a5766] flex justify-between">
         <span>edge = |consensus − TX| − 0.5pp fee assumption</span>
-        <span>refreshed live</span>
+        <span>refreshed every 5s</span>
       </div>
     </Panel>
   );
@@ -324,7 +360,7 @@ function AdminView({ rows }: { rows: MarketRow[] }) {
                   >
                     {badge.txt}
                   </span>
-                  <span className="text-[#e6edf5]">{d.row.event}</span>
+                  <span className="text-[#e6edf5] line-clamp-1">{d.row.event}</span>
                 </div>
                 <div className="text-[10px] text-[#4a5766] mt-0.5">
                   {d.row.outcome} · id:{d.row.id}
@@ -359,19 +395,30 @@ function AdminView({ rows }: { rows: MarketRow[] }) {
 
 /* ------------------------------- SIDE PANELS ------------------------------ */
 
-function SharpTape({ feed }: { feed: string[] }) {
+function SharpTape({ feed }: { feed: SharpMove[] }) {
   return (
-    <Panel title="SHARP TAPE" subtitle="≥1.5pp moves in the last minute">
+    <Panel title="SHARP TAPE" subtitle="≥1.5pp moves per refresh (5s)">
       <div className="max-h-[320px] overflow-auto text-[11px] leading-relaxed">
         {feed.length === 0 && (
           <div className="px-3 py-6 text-center text-[#4a5766]">no sharp moves yet…</div>
         )}
-        {feed.map((line, i) => (
+        {feed.map((m) => (
           <div
-            key={i}
-            className="px-3 py-1 border-b border-[#0f141a] whitespace-pre text-[#8ea3b8]"
+            key={m.id}
+            className="px-3 py-1 border-b border-[#0f141a] text-[#8ea3b8]"
           >
-            {line}
+            <span className="text-[#4a5766]">
+              {new Date(m.ts).toLocaleTimeString()}{" "}
+            </span>
+            <span className="text-[#e6edf5]">{m.book.padEnd(11)}</span>{" "}
+            <span
+              className={m.deltaPP > 0 ? "text-[#3ee08a]" : "text-[#ff5a6b]"}
+            >
+              {m.deltaPP > 0 ? "▲" : "▼"} {Math.abs(m.deltaPP).toFixed(2)}pp
+            </span>{" "}
+            <span className="text-[#8ea3b8] line-clamp-1 inline">
+              {m.row.event}
+            </span>
           </div>
         ))}
       </div>
@@ -380,22 +427,14 @@ function SharpTape({ feed }: { feed: string[] }) {
 }
 
 function BookHealth({ rows }: { rows: MarketRow[] }) {
-  const books: Book[] = [
-    "TXOdds",
-    "Pinnacle",
-    "Betfair",
-    "Polymarket",
-    "Kalshi",
-    "PredictIt",
-    "Smarkets",
-  ];
+  const books: Book[] = ["TXOdds", "Polymarket", "Kalshi"];
   const stats = books.map((b) => {
     const qs = rows.flatMap((r) => r.quotes.filter((q) => q.book === b));
-    const stale = qs.filter((q) => q.lastUpdate > 4000).length;
-    return { book: b, count: qs.length, stale };
+    const simulated = qs.some((q) => q.simulated);
+    return { book: b, count: qs.length, simulated };
   });
   return (
-    <Panel title="BOOK HEALTH" subtitle="latency and coverage across sources">
+    <Panel title="BOOK HEALTH" subtitle="coverage across sources">
       <div className="divide-y divide-[#141a21]">
         {stats.map((s) => (
           <div
@@ -406,17 +445,18 @@ function BookHealth({ rows }: { rows: MarketRow[] }) {
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
                   s.count === 0
-                    ? "bg-[#4a5766]"
-                    : s.stale > 0
+                    ? "bg-[#ff5a6b]"
+                    : s.simulated
                       ? "bg-[#f0b429]"
                       : "bg-[#3ee08a]"
                 }`}
               />
               <span className="text-[#e6edf5]">{s.book}</span>
+              {s.simulated && (
+                <span className="text-[9px] text-[#f0b429] tracking-widest">SIM</span>
+              )}
             </div>
-            <div className="text-[#4a5766] tabular-nums">
-              {s.count} markets · {s.stale} stale
-            </div>
+            <div className="text-[#4a5766] tabular-nums">{s.count} markets</div>
           </div>
         ))}
       </div>
