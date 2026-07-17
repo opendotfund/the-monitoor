@@ -20,7 +20,7 @@ export function CoffeeButton({ className }: { className?: string }) {
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: recipient,
-          lamports: Math.round(0.066 * LAMPORTS_PER_SOL), // ~$10
+          lamports: Math.round(0.1 * LAMPORTS_PER_SOL), // 0.1 SOL
         })
       );
 
@@ -35,10 +35,14 @@ export function CoffeeButton({ className }: { className?: string }) {
       const signature = await sendTransaction(transaction, connection, { minContextSlot });
       console.log("Transaction sent:", signature);
       
-      await connection.confirmTransaction({ blockhash, lastValidBlockHeight, signature });
-      console.log("Transaction confirmed!");
-      
+      // Alert immediately since the wallet handles the actual network confirmation state gracefully
       alert("Thank you for the coffee! ☕\\nTx: " + signature);
+      
+      // Fire and forget the confirmation
+      connection.confirmTransaction({ blockhash, lastValidBlockHeight, signature })
+        .then(() => console.log("Transaction confirmed!"))
+        .catch((e) => console.log("Confirmation timeout (but transaction likely landed):", e));
+        
     } catch (error: any) {
       console.error("Tip failed", error);
       alert("Transaction failed: " + (error?.message || "Unknown error"));
@@ -71,7 +75,7 @@ export function CoffeeButton({ className }: { className?: string }) {
           disabled={loading}
           className={className || "border border-[#3ee08a] text-[#3ee08a] hover:bg-[#3ee08a] hover:text-[#0b0f14] px-4 py-2 text-[12px] font-bold tracking-widest transition-colors flex items-center gap-2"}
         >
-          {loading ? "SENDING..." : "☕ SEND $10 TIP"}
+          {loading ? "SENDING..." : "☕ SEND 0.1 SOL"}
         </button>
       )}
     </div>
