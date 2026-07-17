@@ -26,12 +26,24 @@ export function CoffeeButton({ className }: { className?: string }) {
         })
       );
 
-      const signature = await sendTransaction(transaction, connection);
+      const {
+        context: { slot: minContextSlot },
+        value: { blockhash, lastValidBlockHeight }
+      } = await connection.getLatestBlockhashAndContext();
+
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
+
+      const signature = await sendTransaction(transaction, connection, { minContextSlot });
       console.log("Transaction sent:", signature);
+      
+      await connection.confirmTransaction({ blockhash, lastValidBlockHeight, signature });
+      console.log("Transaction confirmed!");
+      
       alert("Thank you for the coffee! ☕\\nTx: " + signature);
     } catch (error: any) {
       console.error("Tip failed", error);
-      alert("Transaction failed or was rejected.");
+      alert("Transaction failed: " + (error?.message || "Unknown error"));
     } finally {
       setLoading(false);
     }
