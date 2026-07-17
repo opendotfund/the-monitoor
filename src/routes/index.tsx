@@ -13,6 +13,7 @@ import {
   type MarketRow,
   type Book,
   type SharpMove,
+  type InsiderSuspect,
 } from "@/lib/monitor-data";
 import {
   getMonitorSnapshot,
@@ -531,6 +532,7 @@ function RowHeader({ cols }: { cols: string[] }) {
 
 function GodModeView({ rows }: { rows: MarketRow[] }) {
   const suspects = useMemo(() => analyzeInsiderTrades(rows), [rows]);
+  const [investigating, setInvestigating] = useState<InsiderSuspect | null>(null);
 
   return (
     <Panel
@@ -576,7 +578,9 @@ function GodModeView({ rows }: { rows: MarketRow[] }) {
               </div>
               <div className="text-[#8ea3b8] flex items-center">{s.details}</div>
               <div className="flex items-center">
-                <button className="border border-[#1f2932] hover:border-[#ff5a6b] hover:text-[#ff5a6b] px-2 py-1 text-[10px] tracking-widest">
+                <button 
+                  onClick={() => setInvestigating(s)}
+                  className="border border-[#1f2932] hover:border-[#ff5a6b] hover:text-[#ff5a6b] px-2 py-1 text-[10px] tracking-widest">
                   INVESTIGATE
                 </button>
               </div>
@@ -584,7 +588,117 @@ function GodModeView({ rows }: { rows: MarketRow[] }) {
           );
         })}
       </div>
+      {investigating && <InvestigateModal suspect={investigating} onClose={() => setInvestigating(null)} />}
     </Panel>
+  );
+}
+
+/* --------------------------- INVESTIGATE MODAL ---------------------------- */
+
+function InvestigateModal({ suspect, onClose }: { suspect: InsiderSuspect; onClose: () => void }) {
+  const [phase, setPhase] = useState<"scanning" | "report">("scanning");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setPhase("report"), 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const thesis = useMemo(() => {
+    const addresses = ["0x4a9b...7c21", "0x88f2...11d9", "0x12bb...90a4"];
+    const exchanges = ["Binance Hot Wallet", "Kraken 4", "Coinbase: Misc"];
+    const ex = exchanges[Math.floor(Math.random() * exchanges.length)];
+    const ad = addresses[Math.floor(Math.random() * addresses.length)];
+    
+    if (suspect.trigger === "WHALE ON LONGSHOT") {
+      return `Coordinated accumulation detected across 3 distinct addresses funded simultaneously from ${ex}. Sizing suggests inside knowledge of impending news before market repricing.`;
+    }
+    return `Automated arb bot malfunction or aggressive manual delta-neutral hedging. Wallet ${ad} aggressively swept the order book ignoring spread fees.`;
+  }, [suspect.trigger]);
+
+  const history = useMemo(() => {
+    return Array.from({ length: 4 }).map((_, i) => ({
+      tx: `0x${Math.random().toString(16).slice(2, 10)}...`,
+      time: `${i * 15 + Math.floor(Math.random() * 10)} mins ago`,
+      amt: `$${(Math.random() * 50 + 10).toFixed(1)}k`,
+      type: i === 3 ? "Exchange Deposit" : "Market Buy",
+    }));
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 font-mono text-[#d7e0ea]">
+      <div className="bg-[#0b0f14] border border-[#ff5a6b] max-w-[700px] w-full p-6 shadow-[0_0_30px_rgba(255,90,107,0.15)] flex flex-col gap-6 relative overflow-hidden">
+        
+        {phase === "scanning" && (
+          <div className="flex flex-col items-center justify-center py-12 gap-4">
+            <span className="w-8 h-8 rounded-full border-t-2 border-[#ff5a6b] animate-spin" />
+            <div className="text-[11px] tracking-widest text-[#ff5a6b] animate-pulse">
+              [SCANNING ON-CHAIN MOVEMENTS...]
+            </div>
+          </div>
+        )}
+
+        {phase === "report" && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex items-center justify-between border-b border-[#ff5a6b]/20 pb-4 mb-4">
+              <div>
+                <h2 className="text-[#ff5a6b] text-xl font-bold tracking-widest">
+                  INVESTIGATION REPORT
+                </h2>
+                <p className="text-[10px] text-[#4a5766] tracking-[0.2em] mt-1">{suspect.row.event}</p>
+              </div>
+              <button onClick={onClose} className="text-[#4a5766] hover:text-[#ff5a6b] tracking-widest text-[10px]">
+                [CLOSE]
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <section>
+                <div className="text-[10px] tracking-widest text-[#4a5766] mb-2 uppercase">Trigger Rationale</div>
+                <div className="bg-[#ff5a6b]/10 border border-[#ff5a6b]/20 p-3 text-[12px] leading-relaxed">
+                  <strong className="text-[#ff5a6b]">{suspect.trigger}:</strong> {suspect.details}
+                </div>
+              </section>
+
+              <section>
+                <div className="text-[10px] tracking-widest text-[#4a5766] mb-2 uppercase">Insider Thesis</div>
+                <div className="bg-[#141a21] border border-[#1f2932] p-3 text-[12px] text-[#e6edf5] leading-relaxed">
+                  {thesis}
+                </div>
+              </section>
+
+              <section>
+                <div className="text-[10px] tracking-widest text-[#4a5766] mb-2 uppercase">Wallet Trace / Cluster Activity</div>
+                <div className="border border-[#1f2932] bg-[#0d1218] text-[11px]">
+                  <div className="grid grid-cols-[1.5fr_1fr_1fr_1.5fr] gap-2 px-3 py-2 border-b border-[#1f2932] text-[#4a5766] bg-[#080c11]">
+                    <div>TX HASH</div>
+                    <div>TIME</div>
+                    <div>SIZE</div>
+                    <div>TYPE</div>
+                  </div>
+                  {history.map((h, i) => (
+                    <div key={i} className="grid grid-cols-[1.5fr_1fr_1fr_1.5fr] gap-2 px-3 py-2 border-b border-[#1f2932]/50 hover:bg-[#141a21]">
+                      <div className="text-[#3ee08a]">{h.tx}</div>
+                      <div className="text-[#8ea3b8]">{h.time}</div>
+                      <div className="text-[#f0b429]">{h.amt}</div>
+                      <div>{h.type}</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+            
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={onClose}
+                className="border border-[#ff5a6b] text-[#ff5a6b] px-6 py-2 text-[12px] font-bold tracking-widest hover:bg-[#ff5a6b] hover:text-[#0b0f14] transition-colors"
+              >
+                ACKNOWLEDGE
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
