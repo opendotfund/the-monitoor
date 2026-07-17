@@ -7,9 +7,9 @@ import { clusterApiUrl } from '@solana/web3.js';
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 export function SolanaProvider({ children }: { children: React.ReactNode }) {
-  // Use Ankr's free public RPC to avoid 403 Forbidden errors from the default mainnet-beta endpoint
+  // Use publicnode's free RPC as it doesn't require API keys or block Vercel origins
   const network = WalletAdapterNetwork.Mainnet;
-  const endpoint = "https://rpc.ankr.com/solana";
+  const endpoint = "https://solana-rpc.publicnode.com";
 
   const wallets = useMemo(
     () => [
