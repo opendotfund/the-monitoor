@@ -139,7 +139,7 @@ function MonitorPage() {
         <Link to="/" className="underline hover:text-[#8ea3b8]">
           reload
         </Link>
-        <a href="solana:CRdAJC5JriJ64oHwqC5EJFEWr4DrcfsFeK4YDk17tLRD?amount=0.066&label=Coffee+for+Misha" className="ml-auto flex items-center gap-2 hover:text-[#f0b429] transition-colors border border-[#1f2932] px-3 py-1 rounded">
+        <a href="https://phantom.app/ul/v1/pay?receiver=CRdAJC5JriJ64oHwqC5EJFEWr4DrcfsFeK4YDk17tLRD&amount=0.066&memo=Coffee%20for%20Misha" target="_blank" rel="noreferrer" className="ml-auto flex items-center gap-2 hover:text-[#f0b429] transition-colors border border-[#1f2932] px-3 py-1 rounded">
            ☕ Buy me a Coffee
         </a>
         <span>·</span>
@@ -754,7 +754,7 @@ function IntroModal({ onClose }: { onClose: () => void }) {
             </div>
           </a>
           <div className="flex items-center gap-4">
-            <a href="solana:CRdAJC5JriJ64oHwqC5EJFEWr4DrcfsFeK4YDk17tLRD?amount=0.066&label=Coffee+for+Misha" className="border border-[#1f2932] text-[#d7e0ea] hover:border-[#f0b429] hover:text-[#f0b429] px-4 py-2 text-[12px] font-bold tracking-widest transition-colors flex items-center gap-2">
+            <a href="https://phantom.app/ul/v1/pay?receiver=CRdAJC5JriJ64oHwqC5EJFEWr4DrcfsFeK4YDk17tLRD&amount=0.066&memo=Coffee%20for%20Misha" target="_blank" rel="noreferrer" className="border border-[#1f2932] text-[#d7e0ea] hover:border-[#f0b429] hover:text-[#f0b429] px-4 py-2 text-[12px] font-bold tracking-widest transition-colors flex items-center gap-2">
               ☕ BUY ME A COFFEE
             </a>
             <button
