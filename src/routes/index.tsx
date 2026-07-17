@@ -3,6 +3,7 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   analyze,
+  analyzeInsiderTrades,
   diffSharpMoves,
   snapshotMap,
   formatPct,
@@ -27,13 +28,13 @@ const monitorQuery = queryOptions<MonitorSnapshot>({
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "The Monitor — TX Odds Surveillance Console" },
+      { title: "The Monitoor — TX Odds Surveillance Console" },
       {
         name: "description",
         content:
           "Real-time surveillance console comparing TX Odds against Polymarket and Kalshi. Flags sharp movements, arbitrage windows and mispriced markets.",
       },
-      { property: "og:title", content: "The Monitor — TX Odds Surveillance" },
+      { property: "og:title", content: "The Monitoor — TX Odds Surveillance" },
       {
         property: "og:description",
         content:
@@ -56,12 +57,18 @@ export const Route = createFileRoute("/")({
   ),
 });
 
-type Tab = "arb" | "admin";
+type Tab = "arb" | "admin" | "godmode";
 
 function MonitorPage() {
   const [tab, setTab] = useState<Tab>("arb");
   const [paused, setPaused] = useState(false);
   const [feed, setFeed] = useState<SharpMove[]>([]);
+  const [showIntro, setShowIntro] = useState(false);
+  useEffect(() => {
+    if (!localStorage.getItem("monitoor_intro")) {
+      setShowIntro(true);
+    }
+  }, []);
 
   const { data } = useSuspenseQuery({
     ...monitorQuery,
@@ -88,6 +95,7 @@ function MonitorPage() {
 
   return (
     <div className="min-h-screen bg-[#07090c] text-[#d7e0ea] font-mono">
+      {showIntro && <IntroModal onClose={() => { setShowIntro(false); localStorage.setItem("monitoor_intro", "1"); }} />}
       <TopBar
         critical={critical}
         warn={warn}
@@ -105,12 +113,15 @@ function MonitorPage() {
           <TabButton active={tab === "admin"} onClick={() => setTab("admin")}>
             TX ODDS ADMIN
           </TabButton>
+          <TabButton active={tab === "godmode"} onClick={() => setTab("godmode")}>
+            GOD MODE
+          </TabButton>
         </div>
       </div>
 
       <main className="mx-auto max-w-[1400px] px-4 py-4 grid grid-cols-12 gap-4">
         <section className="col-span-12 lg:col-span-8">
-          {tab === "arb" ? <ArbView rows={rows} /> : <AdminView rows={rows} />}
+          {tab === "arb" ? <ArbView rows={rows} /> : tab === "admin" ? <AdminView rows={rows} /> : <GodModeView rows={rows} />}
         </section>
 
         <aside className="col-span-12 lg:col-span-4 space-y-4">
@@ -120,7 +131,7 @@ function MonitorPage() {
       </main>
 
       <footer className="mx-auto max-w-[1400px] px-4 pb-8 pt-2 text-[10px] text-[#4a5766] flex flex-wrap gap-4">
-        <span>THE MONITOR v0.2</span>
+        <span>THE MONITOOR v0.2</span>
         <span>·</span>
         <span>polymarket gamma-api · kalshi trade-api v2</span>
         <span>·</span>
@@ -131,6 +142,11 @@ function MonitorPage() {
         <Link to="/" className="underline hover:text-[#8ea3b8]">
           reload
         </Link>
+        <span>·</span>
+        <a href="https://x.com/mishastastna" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-[#8ea3b8] transition-colors">
+          <img src="/misha-pfp.jpg" alt="Misha Stastna" className="w-4 h-4 rounded-full" />
+          Follow the dev! Misha Stastna
+        </a>
       </footer>
     </div>
   );
@@ -155,9 +171,10 @@ function TopBar({
     <header className="border-b border-[#1a2129] bg-[#0b0f14]">
       <div className="mx-auto max-w-[1400px] px-4 py-3 flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-2">
+          <img src="/tx-logo.jpg" alt="TX Logo" className="w-5 h-5 rounded-full" />
           <span className="h-2 w-2 rounded-full bg-[#3ee08a] animate-pulse" />
           <h1 className="text-[13px] tracking-[0.28em] font-semibold text-[#e6edf5]">
-            THE&nbsp;MONITOR
+            THE&nbsp;MONITOOR
           </h1>
           <span className="text-[10px] text-[#4a5766]">// TX ODDS SURVEILLANCE</span>
         </div>
@@ -505,6 +522,174 @@ function RowHeader({ cols }: { cols: string[] }) {
       {cols.map((c) => (
         <div key={c}>{c}</div>
       ))}
+    </div>
+  );
+}
+
+
+/* ----------------------------- GOD MODE TAB ----------------------------- */
+
+function GodModeView({ rows }: { rows: MarketRow[] }) {
+  const suspects = useMemo(() => analyzeInsiderTrades(rows), [rows]);
+
+  return (
+    <Panel
+      title="GOD MODE — INSIDER TRADE DETECTION"
+      subtitle="Flags suspected insider trades based on liquidity and probability outliers"
+      right={
+        <span className="text-[#ff5a6b] text-[11px]">
+          {suspects.length} flagged
+        </span>
+      }
+    >
+      <div className="divide-y divide-[#141a21]">
+        <RowHeader
+          cols={["MARKET", "SUSPICION REASON", "DETAILS", "ACTION"]}
+        />
+        {suspects.length === 0 && (
+          <div className="px-3 py-6 text-center text-[11px] text-[#4a5766]">
+            no suspicious activity detected
+          </div>
+        )}
+        {suspects.map((s, idx) => {
+          const badgeCls =
+            s.severity === "critical"
+              ? "text-[#ff5a6b] border-[#ff5a6b]/40"
+              : "text-[#f0b429] border-[#f0b429]/40";
+          return (
+            <div
+              key={s.row.id + idx}
+              className="grid grid-cols-[3fr_1.5fr_1.5fr_1fr] gap-2 px-3 py-2.5 text-[12px] hover:bg-[#0d1218]"
+            >
+              <div>
+                <div className="text-[#e6edf5] line-clamp-1">{s.row.event}</div>
+                <div className="text-[10px] text-[#4a5766] mt-0.5">
+                  {s.row.outcome} · {s.row.category}
+                </div>
+              </div>
+              <div className="flex items-center">
+                <span
+                  className={`text-[9px] tracking-widest px-1.5 py-0.5 border ${badgeCls}`}
+                >
+                  {s.trigger}
+                </span>
+              </div>
+              <div className="text-[#8ea3b8] flex items-center">{s.details}</div>
+              <div className="flex items-center">
+                <button className="border border-[#1f2932] hover:border-[#ff5a6b] hover:text-[#ff5a6b] px-2 py-1 text-[10px] tracking-widest">
+                  INVESTIGATE
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+}
+
+/* ------------------------------- INTRO MODAL ------------------------------ */
+
+function IntroModal({ onClose }: { onClose: () => void }) {
+  const handleClose = () => {
+    onClose();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono">
+      <div className="bg-[#0b0f14] border border-[#3ee08a] max-w-[650px] w-full p-6 shadow-[0_0_20px_rgba(62,224,138,0.1)] flex flex-col gap-4">
+        
+        <div className="flex items-center gap-4 border-b border-[#3ee08a]/20 pb-4 mb-2">
+          <img src="/tx-logo.jpg" alt="TX Logo" className="w-12 h-12 rounded-full shadow-[0_0_15px_rgba(62,224,138,0.3)]" />
+          <div>
+            <h2 className="text-[#3ee08a] text-xl font-bold tracking-widest">
+              WELCOME TO THE MONITOOR
+            </h2>
+            <p className="text-[10px] text-[#4a5766] tracking-[0.2em] mt-1">ADVANCED SURVEILLANCE CONSOLE</p>
+          </div>
+        </div>
+        <div className="space-y-4 text-[#d7e0ea] text-[13px] leading-relaxed">
+          <p>
+            <strong>The Monitoor</strong> is an advanced prediction market surveillance console.
+          </p>
+          <p>
+            <strong className="text-[#f0b429]">For Bettors:</strong> Spot arbitrage opportunities in real-time by comparing TXOdds against market consensus (Polymarket + Kalshi). Find mispriced lines before they adjust.
+          </p>
+          <p>
+            <strong className="text-[#f0b429]">For TXOdds Admins:</strong> Ensure market integrity. Quickly identify when your lines drift significantly from the consensus, and spot suspected insider trades via the new <strong>God Mode</strong> tab.
+          </p>
+          <p className="border-l-2 border-[#3ee08a] pl-3 py-1 bg-[#3ee08a]/10">
+            <em>With TXOdds permission, we can automate the market fixing itself, saving capital on mispriced markets instantly.</em>
+          </p>
+        </div>
+        
+        <AnimatedPreview />
+
+        <div className="mt-8 flex items-center justify-between">
+          <a href="https://x.com/mishastastna" target="_blank" rel="noreferrer" className="flex items-center gap-3 text-[#d7e0ea] hover:text-[#3ee08a] transition-colors group">
+            <img src="/misha-pfp.jpg" alt="Misha Stastna" className="w-10 h-10 rounded-full border border-[#3ee08a]/30 group-hover:border-[#3ee08a] transition-colors" />
+            <div className="flex flex-col">
+              <span className="text-[10px] text-[#4a5766] tracking-widest uppercase">Follow the dev!</span>
+              <span className="text-[13px] font-semibold">Misha Stastna</span>
+            </div>
+          </a>
+          <button
+            onClick={handleClose}
+            className="bg-[#3ee08a] text-[#07090c] px-6 py-2 text-[12px] font-bold tracking-widest hover:bg-[#3ee08a]/80 transition-colors"
+          >
+            ENTER SYSTEM
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnimatedPreview() {
+  const [lines, setLines] = useState<{ text: string; type: string }[]>([]);
+
+  useEffect(() => {
+    const sequence = [
+      { text: "[SYS] Initializing cross-book surveillance...", delay: 300, type: "info" },
+      { text: "[SYS] Connected to Polymarket (gamma-api) [OK]", delay: 800, type: "ok" },
+      { text: "[SYS] Connected to Kalshi (trade-api v2) [OK]", delay: 1200, type: "ok" },
+      { text: "[SCAN] Analyzing active markets...", delay: 1800, type: "info" },
+      { text: "[WARN] Whale detected: $250k liquidity on <10% outcome", delay: 2500, type: "warn" },
+      { text: "[CRIT] Massive Divergence: 8.5pp spread on top market", delay: 3200, type: "crit" },
+      { text: "[ACT] Executing automated market correction...", delay: 4000, type: "ok" },
+      { text: "[SYS] Correction successful. Capital saved: $14,250", delay: 4800, type: "ok" },
+      { text: "[SYS] Background monitoring active...", delay: 5600, type: "info" },
+    ];
+
+    let timeouts: ReturnType<typeof setTimeout>[] = [];
+    let cumulative = 0;
+
+    sequence.forEach((item) => {
+      cumulative += item.delay;
+      timeouts.push(
+        setTimeout(() => {
+          setLines((prev) => [...prev, item].slice(-6));
+        }, cumulative)
+      );
+    });
+
+    return () => timeouts.forEach(clearTimeout);
+  }, []);
+
+  return (
+    <div className="bg-[#07090c] border border-[#1a2129] rounded p-3 h-[130px] overflow-hidden relative shadow-inner mt-2 font-mono text-[10px]">
+      <div className="absolute inset-x-0 top-0 h-6 pointer-events-none bg-gradient-to-b from-[#07090c] to-transparent z-10" />
+      <div className="flex flex-col gap-1.5 justify-end h-full relative z-0">
+        {lines.map((l, i) => {
+          const color = l.type === "ok" ? "text-[#3ee08a]" : l.type === "warn" ? "text-[#f0b429]" : l.type === "crit" ? "text-[#ff5a6b]" : "text-[#8ea3b8]";
+          return (
+            <div key={i} className={`${color} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+              {l.text}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

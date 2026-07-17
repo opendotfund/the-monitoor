@@ -77,20 +77,22 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "The Monitor — TX Odds Surveillance" },
+      { title: "The Monitoor — TX Odds Surveillance" },
       {
         name: "description",
         content:
           "Cross-book prediction market surveillance console for TX Odds. Sharp move detection, arbitrage finder, and admin market-reset alerts.",
       },
-      { property: "og:title", content: "The Monitor — TX Odds Surveillance" },
+      { property: "og:title", content: "The Monitoor — TX Odds Surveillance" },
       {
         property: "og:description",
         content:
           "Compare TX Odds against every major prediction market in real time.",
       },
       { property: "og:type", content: "website" },
+      { property: "og:image", content: "/tx-logo.jpg" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:image", content: "/tx-logo.jpg" },
     ],
     links: [
       {

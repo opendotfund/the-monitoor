@@ -100,3 +100,57 @@ export function toOdds(p: number) {
 export function edgeAfterFees(spreadPP: number, feesPP = 0.5) {
   return Math.max(0, Math.abs(spreadPP) - feesPP);
 }
+
+export interface InsiderSuspect {
+  row: MarketRow;
+  trigger: "WHALE ON LONGSHOT" | "MASSIVE DIVERGENCE";
+  severity: "critical" | "warn";
+  details: string;
+}
+
+export function analyzeInsiderTrades(rows: MarketRow[]): InsiderSuspect[] {
+  const suspects: InsiderSuspect[] = [];
+
+  for (const row of rows) {
+    const others = row.quotes.filter((q) => q.book !== "TXOdds");
+    if (!others.length) continue;
+
+    // Check for "Whale on Longshot" across any real book
+    for (const q of others) {
+      if ((q.prob < 0.15 || q.prob > 0.85) && q.liquidity > 100_000) {
+        suspects.push({
+          row,
+          trigger: "WHALE ON LONGSHOT",
+          severity: q.liquidity > 500_000 ? "critical" : "warn",
+          details: `${q.book}: ${formatPct(q.prob, 1)} with ${formatMoney(q.liquidity)} liq`,
+        });
+        break; // don't double count for this row
+      }
+    }
+
+    // Check for Massive Divergence between real books
+    if (others.length >= 2) {
+      let min = others[0].prob;
+      let max = others[0].prob;
+      let maxLiq = others[0].liquidity;
+      for (const q of others) {
+        if (q.prob < min) min = q.prob;
+        if (q.prob > max) max = q.prob;
+        if (q.liquidity > maxLiq) maxLiq = q.liquidity;
+      }
+      const spread = (max - min) * 100;
+      if (spread > 5 && maxLiq > 50_000) {
+        suspects.push({
+          row,
+          trigger: "MASSIVE DIVERGENCE",
+          severity: spread > 10 ? "critical" : "warn",
+          details: `${spread.toFixed(1)}pp gap across books`,
+        });
+      }
+    }
+  }
+
+  // Deduplicate and sort by severity (critical first)
+  const unique = Array.from(new Map(suspects.map((s) => [s.row.id + s.trigger, s])).values());
+  return unique.sort((a, b) => (a.severity === "critical" ? -1 : b.severity === "critical" ? 1 : 0));
+}
