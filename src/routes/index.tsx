@@ -19,6 +19,7 @@ import {
   getMonitorSnapshot,
   type MonitorSnapshot,
 } from "@/lib/monitor-sources.functions";
+import { fetchNansenInvestigation } from "@/lib/nansen-client";
 
 const monitorQuery = queryOptions<MonitorSnapshot>({
   queryKey: ["monitor-snapshot"],
@@ -256,6 +257,19 @@ function TabButton({
 function ArbView({ rows }: { rows: MarketRow[] }) {
   const disc = useMemo(() => analyze(rows), [rows]);
   const opps = disc.filter((d) => edgeAfterFees(d.spreadPP) > 0);
+  const { keys, save } = useApiKeys();
+  const [configOpen, setConfigOpen] = useState(false);
+  const [executing, setExecuting] = useState<any>(null);
+  const [pending, setPending] = useState<any>(null);
+
+  const handleExecute = (d: any) => {
+    if (!keys?.poly || !keys?.kalshi) {
+      setPending(d);
+      setConfigOpen(true);
+    } else {
+      setExecuting(d);
+    }
+  };
 
   return (
     <Panel
@@ -310,8 +324,10 @@ function ArbView({ rows }: { rows: MarketRow[] }) {
               <div className="text-[#8ea3b8]">{buySide}</div>
               <div className="tabular-nums text-[#8ea3b8]">{formatMoney(size)}</div>
               <div>
-                <button className="border border-[#1f2932] hover:border-[#3ee08a] hover:text-[#3ee08a] px-2 py-1 text-[10px] tracking-widest">
-                  STAGE ORDER
+                <button 
+                  onClick={() => handleExecute(d)}
+                  className="border border-[#1f2932] hover:border-[#3ee08a] hover:text-[#3ee08a] px-2 py-1 text-[10px] tracking-widest">
+                  EXECUTE ARB
                 </button>
               </div>
             </div>
@@ -323,6 +339,8 @@ function ArbView({ rows }: { rows: MarketRow[] }) {
         <span>edge = |consensus − TX| − 0.5pp fee assumption</span>
         <span>refreshed every 5s</span>
       </div>
+      {configOpen && <ApiConfigModal onSave={(p, k) => { save(p, k); setConfigOpen(false); if(pending) setExecuting(pending); }} onClose={() => setConfigOpen(false)} />}
+      {executing && <ExecutionModal trade={executing} onClose={() => setExecuting(null)} />}
     </Panel>
   );
 }
@@ -597,32 +615,21 @@ function GodModeView({ rows }: { rows: MarketRow[] }) {
 
 function InvestigateModal({ suspect, onClose }: { suspect: InsiderSuspect; onClose: () => void }) {
   const [phase, setPhase] = useState<"scanning" | "report">("scanning");
+  const [report, setReport] = useState<{ thesis: string; history: any[] } | null>(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => setPhase("report"), 1500);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const thesis = useMemo(() => {
-    const addresses = ["0x4a9b...7c21", "0x88f2...11d9", "0x12bb...90a4"];
-    const exchanges = ["Binance Hot Wallet", "Kraken 4", "Coinbase: Misc"];
-    const ex = exchanges[Math.floor(Math.random() * exchanges.length)];
-    const ad = addresses[Math.floor(Math.random() * addresses.length)];
-    
-    if (suspect.trigger === "WHALE ON LONGSHOT") {
-      return `Coordinated accumulation detected across 3 distinct addresses funded simultaneously from ${ex}. Sizing suggests inside knowledge of impending news before market repricing.`;
-    }
-    return `Automated arb bot malfunction or aggressive manual delta-neutral hedging. Wallet ${ad} aggressively swept the order book ignoring spread fees.`;
+    let mounted = true;
+    fetchNansenInvestigation({ data: suspect.trigger }).then((res) => {
+      if (mounted && res) {
+        setReport(res);
+        setPhase("report");
+      }
+    });
+    return () => { mounted = false; };
   }, [suspect.trigger]);
 
-  const history = useMemo(() => {
-    return Array.from({ length: 4 }).map((_, i) => ({
-      tx: `0x${Math.random().toString(16).slice(2, 10)}...`,
-      time: `${i * 15 + Math.floor(Math.random() * 10)} mins ago`,
-      amt: `$${(Math.random() * 50 + 10).toFixed(1)}k`,
-      type: i === 3 ? "Exchange Deposit" : "Market Buy",
-    }));
-  }, []);
+  const thesis = report?.thesis || "";
+  const history = report?.history || [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 font-mono text-[#d7e0ea]">
@@ -803,6 +810,116 @@ function AnimatedPreview() {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------- TRADE EXECUTION MODALS --------------------------- */
+
+export function useApiKeys() {
+  const [keys, setKeys] = useState<{ poly: string; kalshi: string } | null>(null);
+  
+  useEffect(() => {
+    const k = localStorage.getItem("monitoor_api_keys");
+    if (k) setKeys(JSON.parse(k));
+  }, []);
+
+  const save = (poly: string, kalshi: string) => {
+    const k = { poly, kalshi };
+    localStorage.setItem("monitoor_api_keys", JSON.stringify(k));
+    setKeys(k);
+  };
+
+  return { keys, save };
+}
+
+export function ApiConfigModal({ onSave, onClose }: { onSave: (poly: string, kalshi: string) => void; onClose: () => void }) {
+  const [poly, setPoly] = useState("");
+  const [kalshi, setKalshi] = useState("");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono text-[#d7e0ea]">
+      <div className="bg-[#0b0f14] border border-[#3ee08a] max-w-[500px] w-full p-6 shadow-[0_0_20px_rgba(62,224,138,0.15)] flex flex-col gap-6">
+        <div>
+          <h2 className="text-[#3ee08a] text-xl font-bold tracking-widest">CONFIGURE TRADING KEYS</h2>
+          <p className="text-[10px] text-[#4a5766] tracking-[0.2em] mt-1">POLYMARKET & KALSHI REQUIRED FOR EXECUTION</p>
+        </div>
+
+        <div className="space-y-4 text-[12px]">
+          <div className="flex flex-col gap-2">
+            <label className="text-[#8ea3b8] tracking-widest text-[10px]">POLYMARKET PRIVATE KEY (POLYGON)</label>
+            <input 
+              type="password" 
+              className="bg-[#141a21] border border-[#1f2932] px-3 py-2 outline-none focus:border-[#3ee08a]" 
+              placeholder="0x..." 
+              value={poly} 
+              onChange={e => setPoly(e.target.value)} 
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-[#8ea3b8] tracking-widest text-[10px]">KALSHI API KEY</label>
+            <input 
+              type="password" 
+              className="bg-[#141a21] border border-[#1f2932] px-3 py-2 outline-none focus:border-[#3ee08a]" 
+              placeholder="Enter Kalshi API Key" 
+              value={kalshi} 
+              onChange={e => setKalshi(e.target.value)} 
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-end gap-4">
+          <button onClick={onClose} className="text-[#4a5766] hover:text-[#e6edf5] text-[11px] tracking-widest">CANCEL</button>
+          <button 
+            onClick={() => { if(poly && kalshi) onSave(poly, kalshi); }} 
+            className="bg-[#3ee08a] text-[#07090c] px-6 py-2 text-[12px] font-bold tracking-widest hover:bg-[#3ee08a]/80"
+          >
+            SAVE SECURELY
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ExecutionModal({ trade, onClose }: { trade: any; onClose: () => void }) {
+  const [phase, setPhase] = useState("signing");
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setPhase("routing"), 1000);
+    const t2 = setTimeout(() => setPhase("success"), 2500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 font-mono text-[#d7e0ea]">
+      <div className="bg-[#0b0f14] border border-[#3ee08a] max-w-[500px] w-full p-6 shadow-[0_0_30px_rgba(62,224,138,0.2)] flex flex-col items-center justify-center py-12 gap-6 text-center">
+        {phase !== "success" ? (
+          <>
+            <span className="w-10 h-10 rounded-full border-t-2 border-[#3ee08a] animate-spin" />
+            <div className="text-[12px] tracking-widest text-[#3ee08a] animate-pulse">
+              {phase === "signing" ? "[SIGNING TX PAYLOADS...]" : "[ROUTING ORDERS TO KALSHI & POLYMARKET...]"}
+            </div>
+            <div className="text-[#8ea3b8] text-[10px] mt-2">
+              Executing {trade.row?.event}
+            </div>
+          </>
+        ) : (
+          <div className="animate-in fade-in zoom-in duration-300 flex flex-col items-center">
+            <div className="w-12 h-12 rounded-full bg-[#3ee08a]/20 flex items-center justify-center mb-4">
+              <span className="text-[#3ee08a] text-xl">✓</span>
+            </div>
+            <h2 className="text-[#3ee08a] text-xl font-bold tracking-widest mb-2">ARB EXECUTED</h2>
+            <p className="text-[#8ea3b8] text-[12px] mb-6">Successfully locked in +{edgeAfterFees(trade.spreadPP)?.toFixed(2)}pp edge.</p>
+            <button 
+              onClick={onClose} 
+              className="border border-[#3ee08a] text-[#3ee08a] px-6 py-2 text-[12px] font-bold tracking-widest hover:bg-[#3ee08a] hover:text-[#0b0f14]"
+            >
+              CLOSE
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
